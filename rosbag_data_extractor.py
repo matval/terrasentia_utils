@@ -3,32 +3,69 @@ import cv2
 import numpy as np
 
 import rosbag
-from sensor_msgs.msg import Image, LaserScan
+#from sensor_msgs.msg import Image, LaserScan
+#from grid_map_msgs.msg import GridMap
 from cv_bridge import CvBridge
 
 from scipy.spatial.transform import Rotation as R
 
 class DataExtractor:
     def __init__(self, args, bag_file):
-        left_image_topic = args.left_image_topic
-        left_depth_topic = args.left_depth_topic
-        center_image_topic = args.center_image_topic
-        center_depth_topic = args.center_depth_topic
-        right_image_topic = args.right_image_topic
-        right_depth_topic = args.right_depth_topic
-        get_left_depth = args.get_left_depth
-        get_center_depth = args.get_center_depth
-        get_right_depth = args.get_right_depth
+        if hasattr(args, 'left_image_topic'):
+            left_image_topic = args.left_image_topic
+            # Also, check if compressed topics are available
+            left_image_compressed_topic = left_image_topic + "/compressed"
+        else:
+            left_image_topic = None
+            left_image_compressed_topic = None
+
+        if hasattr(args, 'left_depth_topic'):
+            left_depth_topic = args.left_depth_topic
+        else:
+            left_depth_topic = None
+
+        if hasattr(args, 'center_image_topic'):
+            print('there is a center_image_topic')
+            center_image_topic = args.center_image_topic
+            # Also, check if compressed topics are available
+            center_image_compressed_topic = center_image_topic + "/compressed"
+        else:
+            center_image_topic = None
+            center_image_compressed_topic = None
+
+        if hasattr(args, 'center_depth_topic'):
+            center_depth_topic = args.center_depth_topic
+        else:
+            center_depth_topic = None
+        
+        if hasattr(args, 'right_image_topic'):
+            right_image_topic = args.right_image_topic
+            # Also, check if compressed topics are available
+            right_image_compressed_topic = right_image_topic + "/compressed"
+        else:
+            right_image_topic = None
+            right_image_compressed_topic = None
+
+        if hasattr(args, 'right_depth_topic'):
+            right_depth_topic = args.right_depth_topic
+        else:
+            right_depth_topic = None
+
+        if hasattr(args, 'elevation_map_topic'):
+            elevation_map_topic = args.elevation_map_topic
+        else:
+            elevation_map_topic = None
+
+        if hasattr(args, 'vio_pose_topic'):
+            vio_pose_topic = args.vio_pose_topic
+        else:
+            vio_pose_topic = None
+        
         lidar_topic = args.lidar_topic 
         odom_topic = args.odom_topic 
         imu_topic = args.imu_topic 
         motion_cmd_topic = args.motion_cmd_topic
         mhe_topic = args.mhe_topic
-
-        # Also, check if compressed topics are available
-        left_image_compressed_topic = left_image_topic + "/compressed"
-        center_image_compressed_topic = center_image_topic + "/compressed"
-        right_image_compressed_topic = right_image_topic + "/compressed"
         
         bridge = CvBridge()
 
@@ -52,6 +89,7 @@ class DataExtractor:
         self.y_hist = np.array([])
         self.z_hist = np.array([])
         self.odom_stamp = np.array([])
+        self.vio_stamp = np.array([])
         self.hor_std = np.array([])
         self.left_cv_img = []
         self.left_cv_depth = []
@@ -59,40 +97,53 @@ class DataExtractor:
         self.center_cv_depth = []
         self.right_cv_img = []
         self.right_cv_depth = []
+        self.data_elevation_map = []
         self.lidar = []
         self.imu = []
         self.cmd_vel = []
         self.odom_position = []
         self.odom_orientation = []
+        self.vio_position = []
+        self.vio_orientation = []
         self.traversability = []
-        left_cv_img = np.array([])
-        left_cv_depth = np.array([])
-        center_cv_img = np.array([])
-        center_cv_depth = np.array([])
-        right_cv_img = np.array([])
-        right_cv_depth = np.array([])
 
         # Timestamp arrays for synchronization
         self.t_traversability = np.array([])
         self.t_lidar = np.array([])
         self.t_imu = np.array([])
         self.t_cmd_vel = np.array([])
-        self.t_odom = np.array([])
         self.left_t_img = np.array([])
         self.left_t_depth = np.array([])
         self.center_t_img = np.array([])
         self.center_t_depth = np.array([])
         self.right_t_img = np.array([])
         self.right_t_depth = np.array([])
+        self.t_elevation_map = np.array([])
         
         
         # Split bags name to use as frame name
         bag_name = bag_file.split('/')
         self.bag_name = bag_name[-1].split('.')[0]
 
-        for topic, msg, t in bag.read_messages(topics=[left_image_topic, left_image_compressed_topic, left_depth_topic,\
-            center_image_topic, center_image_compressed_topic, center_depth_topic, right_image_topic, right_image_compressed_topic, \
-            right_depth_topic, lidar_topic, odom_topic, imu_topic, motion_cmd_topic, mhe_topic]):
+        topics_list = [
+            left_image_topic,
+            left_image_compressed_topic,
+            left_depth_topic,
+            center_image_topic,
+            center_image_compressed_topic,
+            center_depth_topic,
+            right_image_topic,
+            right_image_compressed_topic,
+            right_depth_topic,
+            lidar_topic,
+            odom_topic,
+            vio_pose_topic,
+            imu_topic,
+            motion_cmd_topic,
+            mhe_topic,
+            elevation_map_topic]
+
+        for topic, msg, t in bag.read_messages(topics=topics_list):
             #print('topic:', topic)
             t = t.to_sec()
             # Left image
@@ -115,19 +166,22 @@ class DataExtractor:
                 left_t_depth = t
 
             # Center image
-            elif topic == center_image_topic: # and (count % int(30/args.get_freq)) < 0.001:
-                cv_img = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                center_cv_img = cv2.resize(cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+            elif topic == center_image_topic:
+                center_cv_img = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                if hasattr(args, 'image_size'):
+                    center_cv_img = cv2.resize(center_cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
                 center_t_img = t
                 
-            elif topic == center_image_compressed_topic: # and (count % int(30/args.get_freq)) < 0.001:
-                cv_img = bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                center_cv_img = cv2.resize(cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+            elif topic == center_image_compressed_topic:
+                center_cv_img = bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                if hasattr(args, 'image_size'):
+                    center_cv_img = cv2.resize(center_cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
                 center_t_img = t
                 
             elif topic == center_depth_topic:                
-                cv_depth = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
-                center_cv_depth = cv2.resize(cv_depth, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                center_cv_depth = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+                if hasattr(args, 'image_size'):
+                    center_cv_depth = cv2.resize(center_cv_depth, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
                 center_t_depth = t
 
             # Right image
@@ -145,6 +199,16 @@ class DataExtractor:
                 right_cv_depth = cv2.resize(cv_depth, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
                 right_t_depth = t
 
+            elif topic == elevation_map_topic:
+                #print('grid layers:', msg.layers == 'elevation')
+                elevation_idx = 0
+                grid_data = np.asarray(msg.data[elevation_idx].data)
+                grid_dim = (msg.data[elevation_idx].layout.dim[0].size, msg.data[elevation_idx].layout.dim[1].size)
+                grid_data = grid_data.reshape(grid_dim, order='F')
+                grid_img = np.roll(grid_data, (-msg.inner_start_index, -msg.outer_start_index), axis=(1, 0))
+                self.data_elevation_map.append(grid_img)
+                self.t_elevation_map = np.append(self.t_elevation_map, t)
+
             elif topic == lidar_topic:
                 self.t_lidar = np.append(self.t_lidar, t)
                 self.lidar.append(np.asarray(msg.ranges))
@@ -159,29 +223,23 @@ class DataExtractor:
                 qy = msg.pose.pose.orientation.y
                 qz = msg.pose.pose.orientation.z
 
-                r = R.from_quat([qx, qy, qz, qw])
-                curr_rot = r.as_euler('xyz', degrees=False)
-
                 self.odom_position.append([px, py, pz])
                 self.odom_orientation.append([qw, qx, qy, qz])
                 self.odom_stamp = np.append(self.odom_stamp, t)
+            
+            elif topic == vio_pose_topic:
+                px = msg.pose.pose.position.x
+                py = msg.pose.pose.position.y
+                pz = msg.pose.pose.position.z
+                
+                qw = msg.pose.pose.orientation.w
+                qx = msg.pose.pose.orientation.x
+                qy = msg.pose.pose.orientation.y
+                qz = msg.pose.pose.orientation.z
 
-                # Check if robot is oscillating too much
-                if np.abs(curr_rot[0]) <= 10 and np.abs(curr_rot[1]) <= 10 and np.abs(pz) <= 0.4:
-                    self.x_path = np.append(self.x_path, px)
-                    self.y_path = np.append(self.y_path, py)
-                    self.z_path = np.append(self.z_path, pz)
-                    #roll, pitch, theta = self.quaternion_to_euler(w, x, y, z)
-                    #print('roll:', roll, 'pitch:', pitch, 'yaw:', theta)
-                    self.w_hist = np.append(self.w_hist, qw)
-                    self.x_hist = np.append(self.x_hist, qx)
-                    self.y_hist = np.append(self.y_hist, qy)
-                    self.z_hist = np.append(self.z_hist, qz)
-                    self.t_odom = np.append(self.t_odom, t)
-                    
-                    #print('msg.pose.covariance:\n',msg.pose.covariance)
-                    self.hor_std = np.append(self.hor_std, np.sqrt((msg.pose.covariance[0]+msg.pose.covariance[7])/2))
-                    #theta_hist = np.append(theta_hist, theta)
+                self.vio_position.append([px, py, pz])
+                self.vio_orientation.append([qw, qx, qy, qz])
+                self.vio_stamp = np.append(self.vio_stamp, t)
 
             elif topic == imu_topic:
                 ax = msg.angular_velocity.x
@@ -204,67 +262,43 @@ class DataExtractor:
                 self.traversability.append([msg.mu, msg.nu])
 
             # Left image
-            if get_left_depth:
-                if (topic==left_image_topic or topic==left_image_compressed_topic or topic==left_depth_topic) and abs(left_t_img-left_t_depth) < 0.02:
-                    if len(self.left_t_img) == 0:
-                        self.left_cv_img.append(left_cv_img)
-                        self.left_cv_depth.append(left_cv_depth)
-                        self.left_t_img = np.append(self.left_t_img, t)
-                        self.left_t_depth = np.append(self.left_t_depth, t)
-                    elif (left_t_img-self.left_t_img[0])/len(self.left_t_img) >= (1.0/args.get_freq):
-                        self.left_cv_img.append(left_cv_img)
-                        self.left_cv_depth.append(left_cv_depth)
-                        self.left_t_img = np.append(self.left_t_img, t)
-                        self.left_t_depth = np.append(self.left_t_depth, t)
-            elif topic==left_image_topic or topic==left_image_compressed_topic:
+            if (topic==left_image_topic or topic==left_image_compressed_topic or topic==left_depth_topic) and abs(left_t_img-left_t_depth) < 0.02:
                 if len(self.left_t_img) == 0:
                     self.left_cv_img.append(left_cv_img)
+                    self.left_cv_depth.append(left_cv_depth)
                     self.left_t_img = np.append(self.left_t_img, t)
-                elif abs(self.left_t_img[-1]-left_t_img) >= (1.0/args.get_freq-0.033):
+                    self.left_t_depth = np.append(self.left_t_depth, t)
+                elif (left_t_img-self.left_t_img[0])/len(self.left_t_img) >= (1.0/args.get_freq):
                     self.left_cv_img.append(left_cv_img)
+                    self.left_cv_depth.append(left_cv_depth)
                     self.left_t_img = np.append(self.left_t_img, t)
+                    self.left_t_depth = np.append(self.left_t_depth, t)
             
             # Center image
-            if get_center_depth:
-                if (topic==center_image_topic or topic==center_image_compressed_topic or topic==center_depth_topic) and abs(center_t_img-center_t_depth) < 0.02:
-                    if len(self.center_t_img) == 0:
-                        self.center_cv_img.append(center_cv_img)
-                        self.center_cv_depth.append(center_cv_depth)
-                        self.center_t_img = np.append(self.center_t_img, t)
-                        self.center_t_depth = np.append(self.center_t_depth, t)
-                    elif (center_t_img-self.center_t_img[0])/len(self.center_t_img) >= (1.0/args.get_freq):
-                        self.center_cv_img.append(center_cv_img)
-                        self.center_cv_depth.append(center_cv_depth)
-                        self.center_t_img = np.append(self.center_t_img, t)
-                        self.center_t_depth = np.append(self.center_t_depth, t)
-            elif topic==center_image_topic or topic==center_image_compressed_topic:
+            if (topic==center_image_topic or topic==center_image_compressed_topic or topic==center_depth_topic) and abs(center_t_img-center_t_depth) < 0.02:
                 if len(self.center_t_img) == 0:
                     self.center_cv_img.append(center_cv_img)
+                    self.center_cv_depth.append(center_cv_depth)
                     self.center_t_img = np.append(self.center_t_img, t)
+                    self.center_t_depth = np.append(self.center_t_depth, t)
                 elif (center_t_img-self.center_t_img[0])/len(self.center_t_img) >= (1.0/args.get_freq):
                     self.center_cv_img.append(center_cv_img)
+                    self.center_cv_depth.append(center_cv_depth)
                     self.center_t_img = np.append(self.center_t_img, t)
+                    self.center_t_depth = np.append(self.center_t_depth, t)
 
             # Right image
-            if get_right_depth:
-                if (topic==right_image_topic or topic==right_image_compressed_topic or topic==right_depth_topic) and abs(right_t_img-right_t_depth) < 0.02:
-                    if len(self.right_t_img) == 0:
-                        self.right_cv_img.append(right_cv_img)
-                        self.right_cv_depth.append(right_cv_depth)
-                        self.right_t_img = np.append(self.right_t_img, t)
-                        self.right_t_depth = np.append(self.right_t_depth, t)
-                    elif (right_t_img-self.right_t_img[0])/len(self.right_t_img) >= (1.0/args.get_freq):
-                        self.right_cv_img.append(right_cv_img)
-                        self.right_cv_depth.append(right_cv_depth)
-                        self.right_t_img = np.append(self.right_t_img, t)
-                        self.right_t_depth = np.append(self.right_t_depth, t)
-            elif topic==right_image_topic or topic==right_image_compressed_topic:
+            if (topic==right_image_topic or topic==right_image_compressed_topic or topic==right_depth_topic) and abs(right_t_img-right_t_depth) < 0.02:
                 if len(self.right_t_img) == 0:
                     self.right_cv_img.append(right_cv_img)
+                    self.right_cv_depth.append(right_cv_depth)
                     self.right_t_img = np.append(self.right_t_img, t)
+                    self.right_t_depth = np.append(self.right_t_depth, t)
                 elif (right_t_img-self.right_t_img[0])/len(self.right_t_img) >= (1.0/args.get_freq):
                     self.right_cv_img.append(right_cv_img)
+                    self.right_cv_depth.append(right_cv_depth)
                     self.right_t_img = np.append(self.right_t_img, t)
+                    self.right_t_depth = np.append(self.right_t_depth, t)
             
             if topic == center_image_topic or topic==center_image_compressed_topic:
                 count += 1
@@ -272,6 +306,7 @@ class DataExtractor:
                     print('{} images read from rosbag'.format(count))
 
         print('Done reading rosbag')
+
         # Close rosbag file
         bag.close()
 
@@ -282,6 +317,9 @@ class DataExtractor:
                     'odom': {'stamp': self.odom_stamp,
                              'position': self.odom_position,
                              'orientation':self.odom_orientation},
+                    'vio_pose': {'stamp': self.vio_stamp,
+                                 'position': self.vio_position,
+                                 'orientation':self.vio_orientation},
                     'traversability': {'stamp': self.t_traversability, 'data': self.traversability}}
 
         return bag_dict
@@ -294,4 +332,11 @@ class DataExtractor:
                                   'depth': {'stamp': self.center_t_depth, 'data': self.center_cv_depth}},
                        'right': {'rgb': {'stamp': self.right_t_img, 'data': self.right_cv_img},
                                  'depth': {'stamp': self.right_t_depth, 'data': self.right_cv_depth}}}
+                        
         return images_dict
+
+    def get_maps(self):
+
+        maps_dict = {'elevation_map': {'stamp': self.t_elevation_map, 'data': self.data_elevation_map}}
+
+        return maps_dict
