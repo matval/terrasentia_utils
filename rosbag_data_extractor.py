@@ -25,7 +25,6 @@ class DataExtractor:
             left_depth_topic = None
 
         if hasattr(args, 'center_image_topic'):
-            print('there is a center_image_topic')
             center_image_topic = args.center_image_topic
             # Also, check if compressed topics are available
             center_image_compressed_topic = center_image_topic + "/compressed"
