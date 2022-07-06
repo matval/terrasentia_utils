@@ -8,32 +8,48 @@ import pandas as pd
 import torch.utils.data as DataLoader
 
 class TraversabilityDataset(DataLoader.Dataset):
-    def __init__(self, params, transform):
+    def __init__(self, params, data_path, transform):
         print("Initializing dataset")
-        self.root           = params.data_path
+        self.root           = data_path
         self.transform      = transform
         self.output_size    = params.output_size
         self.image_size     = params.input_size
         self.depth_mean     = params.depth_mean
         self.depth_std      = params.depth_std
+        self.bin_width = 0.2
+
+        # Get csv file path
+        csv_path = os.path.join(data_path, params.csv_file)
         
         # Read lines in csv file
-        self.data = pd.read_csv(params.csv_path)
+        bags_list = pd.read_csv(csv_path)
 
-        # Prepare data and get max and min values
-        self.color_fname, self.depth_fname, self.path_fname, self.mu_fname, self.nu_fname = self.prepare(self.data)
+        self.color_fname = []
+        self.depth_fname = []
+        self.path_fname = []
+        self.mu_fname = []
+        self.nu_fname = []
+
+        for bag in bags_list.values:
+            data = pd.read_csv(os.path.join(self.root, bag[0]))
+
+            # Prepare data and get max and min values
+            color_fname, depth_fname, path_fname, mu_fname, nu_fname = self.prepare(data)
+
+            self.color_fname.extend(color_fname)
+            self.depth_fname.extend(depth_fname)
+            self.path_fname.extend(path_fname)
+            self.mu_fname.extend(mu_fname)
+            self.nu_fname.extend(nu_fname)
 
         self.weights, self.bins = self.prepare_weights()
-        '''
-        for i in range(int(np.ceil(len(self.weights)/2))):
-            self.weights[i] *= 0.5**i
-            self.weights[-i-1] *= 0.5**i
-        '''
+
         print('weights:', self.weights)
         print('bins:', self.bins)
 
-        # Print depth statistics
-        self.get_depth_stats()
+        if params.compute_stats:
+            # Print depth statistics
+            self.get_data_stats()
 
         self.preproc = params.preproc
 
@@ -60,31 +76,25 @@ class TraversabilityDataset(DataLoader.Dataset):
         color_img = self.transform(color_img)
 
         # Convert depth to meters
-        depth_img = cv2.resize(depth_img, self.image_size, interpolation = cv2.INTER_AREA)
-        depth_img = np.uint16(depth_img)
-        depth_img = depth_img*10**-3
+        depth_img = cv2.resize(depth_img, self.image_size, interpolation = cv2.INTER_NEAREST)
+        # Get depth mask
+        depth_mask = np.isfinite(depth_img).astype(np.float)
+        depth_img[~np.isfinite(depth_img)] = 0.0
         # Normalize depth image
         depth_img = (depth_img-self.depth_mean)/self.depth_std
-        depth_img = np.expand_dims(depth_img, axis=2)
+        depth_img = np.stack((depth_img, depth_mask), axis=2)
         depth_img = np.transpose(depth_img, (2, 0, 1))
 
-        mu_img = cv2.resize(mu_img, self.output_size, interpolation = cv2.INTER_AREA)
-        nu_img = cv2.resize(nu_img, self.output_size, interpolation = cv2.INTER_AREA)
-        path_img = cv2.resize(path_img, self.output_size, interpolation = cv2.INTER_AREA)
+        mu_img = cv2.resize(mu_img, self.output_size, interpolation = cv2.INTER_NEAREST)
+        nu_img = cv2.resize(nu_img, self.output_size, interpolation = cv2.INTER_NEAREST)
+        path_img = cv2.resize(path_img, self.output_size, interpolation = cv2.INTER_NEAREST)
 
         # expand first dimension
         mu_img = np.expand_dims(mu_img, 0)
         nu_img = np.expand_dims(nu_img, 0)
         path_img = np.expand_dims(path_img, 0)
 
-        mu_img = mu_img/255.0
-        nu_img = nu_img/255.0
-        path_img = (path_img/255.0).astype(bool)
-        
-        # normalize depth values from dataset
-        #depth = (depth - self.depth_mean)/self.depth_std
-        # normalize headings values from dataset
-        #angle = (angle - self.angle_mean)/self.angle_std
+        path_img = path_img.astype(bool)
 
         weight_idxs = np.digitize(mu_img, self.bins[:-1]) - 1
         weight = self.weights[weight_idxs]*path_img
@@ -92,7 +102,7 @@ class TraversabilityDataset(DataLoader.Dataset):
         return color_img, depth_img, path_img, mu_img, nu_img, weight
 
     def __len__(self):
-        return len(self.data)
+        return len(self.color_fname)
 
     def prepare(self, data):
         color_fname_list = []
@@ -123,8 +133,7 @@ class TraversabilityDataset(DataLoader.Dataset):
 
         return color_img, depth_img, path_img, mu_img, nu_img
 
-    def prepare_weights(self):
-        bin_width = 0.2
+    def prepare_weights(self):  
         labels_data = []
         for idx in range(len(self.mu_fname)):
             mu_fname = self.mu_fname[idx]
@@ -132,19 +141,19 @@ class TraversabilityDataset(DataLoader.Dataset):
 
             mu_img = cv2.imread(os.path.join(self.root, mu_fname),-1)
             mu_img = cv2.resize(mu_img, self.output_size, interpolation = cv2.INTER_AREA)
-            mu_img = mu_img/255.0
+            mu_img = mu_img
 
             path_img = cv2.imread(os.path.join(self.root, path_fname),-1)
             path_img = cv2.resize(path_img, self.output_size, interpolation = cv2.INTER_AREA)
-            path_img = (path_img/255.0).astype(bool)
+            path_img = path_img.astype(bool)
    
             data_image = mu_img[path_img]
             labels_data.extend(data_image.flatten().tolist())
 
         # Draw the plot
-        values, bins = np.histogram(labels_data, bins = int(1/bin_width), range=(0,1), density=True)
+        values, bins = np.histogram(labels_data, bins = int(1/self.bin_width), range=(0,1), density=True)
 
-        return 0.1/values, bins
+        return (1-values*self.bin_width), bins
 
     def get_depth_stats(self):
         psum = 0.0
@@ -152,8 +161,7 @@ class TraversabilityDataset(DataLoader.Dataset):
         for idx in range(len(self.depth_fname)):
             depth_fname = self.depth_fname[idx]
 
-            depth_img = cv2.imread(os.path.join(self.root, depth_fname),-1)
-            depth_img = depth_img*1e-3
+            depth_img = cv2.imread(os.path.join(self.root, depth_fname), -1)
             psum += np.sum(depth_img)
             psum_sq += np.sum(depth_img**2)
 

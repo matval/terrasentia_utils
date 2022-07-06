@@ -214,51 +214,40 @@ def multi_depth_to_gridmap(depth_left, depth_center, depth_right, resolution, gr
     new_grid[:grid.shape[0],:grid.shape[1]] = grid
     return new_grid, downpcd
 
-def path_to_gridmap(path, std_path, resolution, grid_size, center, radius):
-    # Rotate path to aligned to image
-    T1 = R.from_euler('y', -180, degrees=True)
-    T2 = R.from_euler('x', -180, degrees=True)
-    T = T2 * T1
-    x = np.dot(T.as_matrix(), path)
+def path_to_gridmap(path, traversability, resolution, map_size, map_center):
+    path[0] = -path[0]/resolution + map_center[1]
+    path[1] = -path[1]/resolution + map_center[0] 
 
-    # Convert meters to grid coordinates
-    x = np.round(x/resolution).astype(int)
-    x[0] += center[0]
-    x[1] += center[1]
+    # Filter out path outside the map   
+    path_ids = ((path[0] >= 0) &
+                (path[1] >= 0) &
+                (path[1] < map_size[0]) &
+                (path[0] < map_size[1]))
     
-    # Remove duplicates
-    x, unique_idx = np.unique(x, return_index=True, axis=1)
-    std_path = std_path[unique_idx]
+    path = path[:, path_ids].astype('int')
+    traversability = traversability[path_ids]
 
-    path_ids = (x[0] >= 0) & (x[1] >= 0) & (x[0] < grid_size[0]) & (x[1] < grid_size[1])
+    # Verify if path is empty
+    if path.shape[1] == 0:
+        mu_img = np.full(map_size, np.nan)
+        return mu_img
+
+    mu_img = np.zeros(map_size)
+    sum_map = np.zeros(map_size)
+
+    # for i in range(path.shape[1]):
+    #     mu_img[path[1,i], path[0,i]] += traversability[i]
+    #     sum_map[path[1,i], path[0,i]] += 1
+
+    mu_img[path[0], path[1]] += traversability
+    sum_map[path[0], path[1]] += 1
+
+    mask = 1*(sum_map == 0)
+    mu_img /= (sum_map + mask)
+    #mu_img[mask==1] = 0
+    path_img = (1-mask)
     
-    x = x[:, path_ids]
-    std_x = std_path[path_ids]
-
-    grid = np.zeros(grid_size)
-    sum_grid = np.zeros(grid_size)
-
-    radius = int(radius/resolution)
-    for i in range(x.shape[1]):
-        temp_grid = np.zeros(grid_size)
-        temp_grid[x[0,i]-radius:x[0,i]+radius, x[1,i]-radius:x[1,i]+radius] = 1.0
-        sum_grid[x[0,i]-radius:x[0,i]+radius, x[1,i]-radius:x[1,i]+radius] = 1.0
-        temp_grid = gaussian_filter(temp_grid, std_x[i]/resolution)
-        temp_grid = (1.0-grid)*(1-temp_grid)
-        
-        grid = 1.0 - temp_grid
-        #grid += temp_grid
-
-    #grid = grid*(2*radius)**2/x.shape[1]
-    #grid = grid*np.sum(sum_grid)/np.sum(grid)
-    #grid = grid/((2*radius)**2)
-    #print("max(grid):", np.max(grid))
-    #print("sum(grid):", np.sum(grid))
-    #print("sum(sum_grid):", np.sum(sum_grid))
-    #print("len(path):", x.shape[1])
-    #print("min(std):", np.min(std_x))
-    
-    return grid
+    return mu_img, path_img
 
 def lidar_to_gridmap(lidar, resolution, grid_size, center):
     grid = np.zeros(grid_size)
@@ -317,3 +306,43 @@ def project_to_image(path, traversability, image_size, patch_size, K):
     nu_img /= (sum_map + mask)
     
     return mu_img, nu_img, path_img
+
+def dilate_robot_trace(path, orientation, traversability, resolution, robot_size):
+    x = np.arange(-robot_size[0]/2, robot_size[0]/2, resolution)
+    y = np.arange(-robot_size[1]/2, robot_size[1]/2, resolution)
+    xx, yy = np.meshgrid(x, y)
+    xx = xx.flatten()
+    yy = yy.flatten()
+    robots_step = np.vstack((xx, yy, np.ones(len(xx))))
+
+    new_path = []#np.array([[],[],[]]).T
+    new_traversability = []#np.array([[],[]]).T
+
+    # convert to numpy array
+    np_orientation = np.asarray(orientation)
+
+    # Swap first and last columns, because Rotation lib uses w last
+    np_orientation = np_orientation[:,[1,2,3,0]]
+
+    T = R.from_quat(np_orientation)
+
+    for i in range(len(path)):
+        curr_trace = robots_step
+        curr_trace[2] = 0 #path[i][2]*robots_step[2]
+
+        # Rotate robot's step by its current rotation
+        curr_trace = T[i].as_matrix() @ curr_trace
+        # And translate to its current location
+        curr_trace = curr_trace + np.array([path[i]]).T
+        # Concatenate points to array
+        #new_path = np.concatenate((new_path, curr_trace.T))
+        new_path.append(curr_trace.T)
+        # And dilate traversability measurements accordingly
+        curr_traversability = np.array([traversability[i]]).T*np.ones(len(xx))
+        #new_traversability = np.concatenate((new_traversability, curr_traversability.T))
+        new_traversability.append(curr_traversability.T)
+
+    new_path = np.concatenate(new_path)
+    new_traversability = np.concatenate(new_traversability)
+        
+    return new_path, new_traversability

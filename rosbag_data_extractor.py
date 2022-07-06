@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import cv2
+import rospy
 import numpy as np
 
 import rosbag
@@ -59,6 +60,11 @@ class DataExtractor:
             vio_pose_topic = args.vio_pose_topic
         else:
             vio_pose_topic = None
+
+        if hasattr(args, 'center_cam_info'):
+            center_cam_info = args.center_cam_info
+        else:
+            center_cam_info = None
         
         lidar_topic = args.lidar_topic 
         odom_topic = args.odom_topic 
@@ -94,6 +100,8 @@ class DataExtractor:
         self.left_cv_depth = []
         self.center_cv_img = []
         self.center_cv_depth = []
+        self.center_intrinsics = []
+        self.center_resolution = []
         self.right_cv_img = []
         self.right_cv_depth = []
         self.data_elevation_map = []
@@ -117,8 +125,7 @@ class DataExtractor:
         self.center_t_depth = np.array([])
         self.right_t_img = np.array([])
         self.right_t_depth = np.array([])
-        self.t_elevation_map = np.array([])
-        
+        self.t_elevation_map = np.array([])        
         
         # Split bags name to use as frame name
         bag_name = bag_file.split('/')
@@ -131,6 +138,8 @@ class DataExtractor:
             center_image_topic,
             center_image_compressed_topic,
             center_depth_topic,
+            center_image_compressed_topic,
+            center_cam_info,
             right_image_topic,
             right_image_compressed_topic,
             right_depth_topic,
@@ -142,60 +151,72 @@ class DataExtractor:
             mhe_topic,
             elevation_map_topic]
 
-        for topic, msg, t in bag.read_messages(topics=topics_list):
+        init_time = bag.get_start_time()
+        start_time = rospy.Time(init_time + args.start_after)
+
+        for topic, msg, t in bag.read_messages(topics=topics_list, start_time=start_time):
             #print('topic:', topic)
             t = t.to_sec()
+            
             # Left image
             if topic == left_image_topic: # and (count % int(30/args.get_freq)) < 0.001:
                 cv_img = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                left_cv_img = cv2.resize(cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                left_cv_img = cv2.resize(cv_img, args.image_size, interpolation = cv2.INTER_CUBIC)
                 left_cv_img = cv2.rotate(left_cv_img, cv2.ROTATE_180)
                 left_t_img = t
                 
             elif topic == left_image_compressed_topic: # and (count % int(30/args.get_freq)) < 0.001:
                 cv_img = bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                left_cv_img = cv2.resize(cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                left_cv_img = cv2.resize(cv_img, args.image_size, interpolation = cv2.INTER_CUBIC)
                 left_cv_img = cv2.rotate(left_cv_img, cv2.ROTATE_180)
                 left_t_img = t
                 
             elif topic == left_depth_topic:
                 cv_depth = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
-                left_cv_depth = cv2.resize(cv_depth, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                left_cv_depth = cv2.resize(cv_depth, args.image_size, interpolation = cv2.INTER_NEAREST)
                 left_cv_depth = cv2.rotate(left_cv_depth, cv2.ROTATE_180)
                 left_t_depth = t
 
             # Center image
             elif topic == center_image_topic:
-                center_cv_img = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                np_arr = np.frombuffer(msg.data, np.uint8)
+                center_cv_img = np_arr.reshape(msg.height, msg.width)
                 if hasattr(args, 'image_size'):
-                    center_cv_img = cv2.resize(center_cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                    center_cv_img = cv2.resize(center_cv_img, args.image_size, interpolation = cv2.INTER_CUBIC)
                 center_t_img = t
                 
             elif topic == center_image_compressed_topic:
-                center_cv_img = bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                np_arr = np.frombuffer(msg.data, np.uint8)
+                center_cv_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
                 if hasattr(args, 'image_size'):
-                    center_cv_img = cv2.resize(center_cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                    center_cv_img = cv2.resize(center_cv_img, args.image_size, interpolation = cv2.INTER_CUBIC)
                 center_t_img = t
                 
-            elif topic == center_depth_topic:                
-                center_cv_depth = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+            elif topic == center_depth_topic:
+                np_arr = np.frombuffer(msg.data, np.float32)
+                center_cv_depth = np_arr.reshape(msg.height, msg.width)
                 if hasattr(args, 'image_size'):
-                    center_cv_depth = cv2.resize(center_cv_depth, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                    center_cv_depth = cv2.resize(center_cv_depth, args.image_size, interpolation = cv2.INTER_NEAREST)
                 center_t_depth = t
+
+            elif topic == center_cam_info:
+                intrinsics = np.array(msg.K).reshape(3,3)
+                self.center_intrinsics.append(intrinsics)
+                self.center_resolution.append([msg.width, msg.height])
 
             # Right image
             elif topic == right_image_topic: # and (count % int(30/args.get_freq)) < 0.001:
                 cv_img = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                right_cv_img = cv2.resize(cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                right_cv_img = cv2.resize(cv_img, args.image_size, interpolation = cv2.INTER_CUBIC)
                 right_t_img = t
             elif topic == right_image_compressed_topic: # and (count % int(30/args.get_freq)) < 0.001:
                 cv_img = bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                right_cv_img = cv2.resize(cv_img, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                right_cv_img = cv2.resize(cv_img, args.image_size, interpolation = cv2.INTER_CUBIC)
                 right_t_img = t
                 
             elif topic == right_depth_topic:
                 cv_depth = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
-                right_cv_depth = cv2.resize(cv_depth, (args.image_size[1], args.image_size[0]), interpolation = cv2.INTER_CUBIC)
+                right_cv_depth = cv2.resize(cv_depth, args.image_size, interpolation = cv2.INTER_NEAREST)
                 right_t_depth = t
 
             elif topic == elevation_map_topic:
@@ -328,7 +349,9 @@ class DataExtractor:
         images_dict = {'left': {'rgb': {'stamp': self.left_t_img, 'data': self.left_cv_img},
                                 'depth': {'stamp': self.left_t_depth, 'data': self.left_cv_depth}},
                        'center': {'rgb': {'stamp': self.center_t_img, 'data': self.center_cv_img},
-                                  'depth': {'stamp': self.center_t_depth, 'data': self.center_cv_depth}},
+                                  'depth': {'stamp': self.center_t_depth, 'data': self.center_cv_depth},
+                                  'intrinsics': self.center_intrinsics,
+                                  'resolution': self.resolution},
                        'right': {'rgb': {'stamp': self.right_t_img, 'data': self.right_cv_img},
                                  'depth': {'stamp': self.right_t_depth, 'data': self.right_cv_depth}}}
                         
