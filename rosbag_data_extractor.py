@@ -351,7 +351,7 @@ class DataExtractor:
                        'center': {'rgb': {'stamp': self.center_t_img, 'data': self.center_cv_img},
                                   'depth': {'stamp': self.center_t_depth, 'data': self.center_cv_depth},
                                   'intrinsics': self.center_intrinsics,
-                                  'resolution': self.resolution},
+                                  'resolution': self.center_resolution},
                        'right': {'rgb': {'stamp': self.right_t_img, 'data': self.right_cv_img},
                                  'depth': {'stamp': self.right_t_depth, 'data': self.right_cv_depth}}}
                         
