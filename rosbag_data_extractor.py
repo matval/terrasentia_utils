@@ -65,12 +65,46 @@ class DataExtractor:
             center_cam_info = args.center_cam_info
         else:
             center_cam_info = None
+
+        if hasattr(args, 'gps_topic'):
+            gps_topic = args.gps_topic
+        else:
+            gps_topic = None
         
-        lidar_topic = args.lidar_topic 
-        odom_topic = args.odom_topic 
-        imu_topic = args.imu_topic 
-        motion_cmd_topic = args.motion_cmd_topic
-        mhe_topic = args.mhe_topic
+        if hasattr(args, 'lidar_topic'):
+            lidar_topic = args.lidar_topic 
+        else:
+            lidar_topic = None
+        
+        if hasattr(args, 'odom_topic'):
+            odom_topic = args.odom_topic 
+        else:
+            odom_topic = None
+
+        if hasattr(args, 'imu_topic'):
+            imu_topic = args.imu_topic 
+        else:
+            imu_topic = None
+
+        if hasattr(args, 'motion_cmd_topic'):
+            motion_cmd_topic = args.motion_cmd_topic 
+        else:
+            motion_cmd_topic = None
+
+        if hasattr(args, 'mhe_topic'):
+            mhe_topic = args.mhe_topic 
+        else:
+            mhe_topic = None
+
+        if hasattr(args, 'collision_topic'):
+            collision_topic = args.collision_topic 
+        else:
+            collision_topic = None
+
+        if hasattr(args, 'goals_topic'):
+            goals_topic = args.goals_topic 
+        else:
+            goals_topic = None
         
         bridge = CvBridge()
 
@@ -93,6 +127,7 @@ class DataExtractor:
         self.x_hist = np.array([])
         self.y_hist = np.array([])
         self.z_hist = np.array([])
+        self.gps_stamp = np.array([])
         self.odom_stamp = np.array([])
         self.vio_stamp = np.array([])
         self.hor_std = np.array([])
@@ -113,6 +148,10 @@ class DataExtractor:
         self.vio_position = []
         self.vio_orientation = []
         self.traversability = []
+        self.gps_lat_lon = []
+        self.gps_accuracy = []
+        self.data_collision = []
+        self.data_goals = []
 
         # Timestamp arrays for synchronization
         self.t_traversability = np.array([])
@@ -125,7 +164,9 @@ class DataExtractor:
         self.center_t_depth = np.array([])
         self.right_t_img = np.array([])
         self.right_t_depth = np.array([])
-        self.t_elevation_map = np.array([])        
+        self.t_elevation_map = np.array([])
+        self.t_collision = np.array([])
+        self.t_goals = np.array([])
         
         # Split bags name to use as frame name
         bag_name = bag_file.split('/')
@@ -149,7 +190,10 @@ class DataExtractor:
             imu_topic,
             motion_cmd_topic,
             mhe_topic,
-            elevation_map_topic]
+            elevation_map_topic,
+            gps_topic,
+            collision_topic,
+            goals_topic]
 
         init_time = bag.get_start_time()
         start_time = rospy.Time(init_time + args.start_after)
@@ -228,6 +272,21 @@ class DataExtractor:
                 grid_img = np.roll(grid_data, (-msg.inner_start_index, -msg.outer_start_index), axis=(1, 0))
                 self.data_elevation_map.append(grid_img)
                 self.t_elevation_map = np.append(self.t_elevation_map, t)
+
+            elif topic==collision_topic:
+                self.data_collision.append(msg.data)
+                self.t_collision = np.append(self.t_collision, t)
+
+            elif topic==goals_topic:
+                goals_lat = [x.latitude for x in msg.data]
+                goals_lon = [x.longitude for x in msg.data]
+                self.data_goals = [goals_lat, goals_lon]
+                self.t_goals = np.append(self.t_goals, t)
+
+            elif topic == gps_topic:
+                self.gps_lat_lon.append([msg.latitude, msg.longitude])
+                self.gps_accuracy.append(msg.horizontal_accuracy)
+                self.gps_stamp = np.append(self.gps_stamp, t)
 
             elif topic == lidar_topic:
                 self.t_lidar = np.append(self.t_lidar, t)
@@ -340,7 +399,16 @@ class DataExtractor:
                     'vio_pose': {'stamp': self.vio_stamp,
                                  'position': self.vio_position,
                                  'orientation':self.vio_orientation},
-                    'traversability': {'stamp': self.t_traversability, 'data': self.traversability}}
+                    'gps': {'stamp': self.gps_stamp,
+                            'lat_lon': self.gps_lat_lon,
+                            'accuracy':self.gps_accuracy},
+                    'traversability': {'stamp': self.t_traversability,
+                                       'data': self.traversability},
+                    'collision': {'stamp': self.t_collision,
+                                  'data': self.data_collision},
+                    'goals': {'stamp': self.t_goals,
+                              'data': self.data_goals},
+                    }
 
         return bag_dict
 
