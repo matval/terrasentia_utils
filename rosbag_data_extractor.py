@@ -105,6 +105,16 @@ class DataExtractor:
             goals_topic = args.goals_topic 
         else:
             goals_topic = None
+
+        if hasattr(args, 'reference_topic'):
+            reference_topic = args.reference_topic 
+        else:
+            reference_topic = None
+
+        if hasattr(args, 'reference_governor_topic'):
+            reference_governor_topic = args.reference_governor_topic 
+        else:
+            reference_governor_topic = None
         
         bridge = CvBridge()
 
@@ -145,6 +155,7 @@ class DataExtractor:
         self.cmd_vel = []
         self.odom_position = []
         self.odom_orientation = []
+        self.odom_velocities = []
         self.vio_position = []
         self.vio_orientation = []
         self.traversability = []
@@ -152,6 +163,8 @@ class DataExtractor:
         self.gps_accuracy = []
         self.data_collision = []
         self.data_goals = []
+        self.reference = []
+        self.reference_governor = []
 
         # Timestamp arrays for synchronization
         self.t_traversability = np.array([])
@@ -193,7 +206,9 @@ class DataExtractor:
             elevation_map_topic,
             gps_topic,
             collision_topic,
-            goals_topic]
+            goals_topic,
+            reference_topic,
+            reference_governor_topic]
 
         init_time = bag.get_start_time()
         start_time = rospy.Time(init_time + args.start_after)
@@ -302,8 +317,17 @@ class DataExtractor:
                 qy = msg.pose.pose.orientation.y
                 qz = msg.pose.pose.orientation.z
 
+                vx = msg.twist.twist.linear.x
+                vy = msg.twist.twist.linear.y
+                vz = msg.twist.twist.linear.z
+
+                wx = msg.twist.twist.angular.x
+                wy = msg.twist.twist.angular.y
+                wz = msg.twist.twist.angular.z
+
                 self.odom_position.append([px, py, pz])
                 self.odom_orientation.append([qw, qx, qy, qz])
+                self.odom_velocities.append([vx, vy, vz, wx, wy, wz])
                 self.odom_stamp = np.append(self.odom_stamp, t)
             
             elif topic == vio_pose_topic:
@@ -339,6 +363,12 @@ class DataExtractor:
             elif topic == mhe_topic:
                 self.t_traversability = np.append(self.t_traversability, t)
                 self.traversability.append([msg.mu, msg.nu])
+
+            elif topic==reference_topic:
+                self.reference = [msg.x, msg.y, msg.theta, msg.speed, msg.omega, msg.time]
+
+            elif topic==reference_governor_topic:
+                self.reference_governor = [msg.x, msg.y, msg.theta, msg.speed, msg.omega, msg.time]
 
             # Left image
             if (topic==left_image_topic or topic==left_image_compressed_topic or topic==left_depth_topic) and abs(left_t_img-left_t_depth) < 0.02:
@@ -395,6 +425,7 @@ class DataExtractor:
                     'cmd_vel': {'stamp': self.t_cmd_vel, 'data': self.cmd_vel},
                     'odom': {'stamp': self.odom_stamp,
                              'position': self.odom_position,
+                             'velocities': self.odom_velocities,
                              'orientation':self.odom_orientation},
                     'vio_pose': {'stamp': self.vio_stamp,
                                  'position': self.vio_position,
@@ -408,6 +439,8 @@ class DataExtractor:
                                   'data': self.data_collision},
                     'goals': {'stamp': self.t_goals,
                               'data': self.data_goals},
+                    'reference': self.reference,
+                    'reference_governor': self.reference_governor,
                     }
 
         return bag_dict
