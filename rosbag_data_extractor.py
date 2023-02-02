@@ -115,6 +115,11 @@ class DataExtractor:
             reference_governor_topic = args.reference_governor_topic 
         else:
             reference_governor_topic = None
+
+        if hasattr(args, 'reference_governor_topic'):
+            adaptation_info_topic = args.adaptation_info_topic 
+        else:
+            adaptation_info_topic = None
         
         bridge = CvBridge()
 
@@ -129,6 +134,7 @@ class DataExtractor:
         center_t_depth = 0
         right_t_img = 0
         right_t_depth = 0
+        self.t_start = 0.
 
         self.x_path = np.array([])
         self.y_path = np.array([])
@@ -180,6 +186,8 @@ class DataExtractor:
         self.t_elevation_map = np.array([])
         self.t_collision = np.array([])
         self.t_goals = np.array([])
+        self.t_reference = np.array([])
+        self.t_reference_governor = np.array([])
         
         # Split bags name to use as frame name
         bag_name = bag_file.split('/')
@@ -208,7 +216,8 @@ class DataExtractor:
             collision_topic,
             goals_topic,
             reference_topic,
-            reference_governor_topic]
+            reference_governor_topic,
+            adaptation_info_topic]
 
         init_time = bag.get_start_time()
         start_time = rospy.Time(init_time + args.start_after)
@@ -365,10 +374,15 @@ class DataExtractor:
                 self.traversability.append([msg.mu, msg.nu])
 
             elif topic==reference_topic:
-                self.reference = [msg.x, msg.y, msg.theta, msg.speed, msg.omega, msg.time]
+                self.reference = [msg.x, msg.y, msg.theta, msg.speed, msg.omega]
+                self.t_reference = msg.time
 
             elif topic==reference_governor_topic:
-                self.reference_governor = [msg.x, msg.y, msg.theta, msg.speed, msg.omega, msg.time]
+                self.reference_governor = [msg.x, msg.y, msg.theta, msg.speed, msg.omega]
+                self.t_reference_governor = msg.time
+
+            elif topic==adaptation_info_topic:
+                self.t_start = msg.t_start
 
             # Left image
             if (topic==left_image_topic or topic==left_image_compressed_topic or topic==left_depth_topic) and abs(left_t_img-left_t_depth) < 0.02:
@@ -439,8 +453,11 @@ class DataExtractor:
                                   'data': self.data_collision},
                     'goals': {'stamp': self.t_goals,
                               'data': self.data_goals},
-                    'reference': self.reference,
-                    'reference_governor': self.reference_governor,
+                    'reference': {'stamp': self.t_reference,
+                              'data': self.reference},
+                    'reference_governor': {'stamp': self.t_reference_governor,
+                              'data': self.reference_governor},
+                    't_start': self.t_start,
                     }
 
         return bag_dict
