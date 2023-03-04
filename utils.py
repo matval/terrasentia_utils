@@ -254,8 +254,8 @@ def lidar_to_gridmap(lidar, resolution, grid_size, center):
     angles = linspace(-2.35619449, 2.35619449, len(lidar))
 
     for idx in range(len(lidar)):
-        x = int(center[0] - lidar[idx]*np.cos(angles[idx])/resolution)
-        y = int(center[1] - lidar[idx]*np.sin(angles[idx])/resolution)
+        x = np.round(center[0] - lidar[idx]*np.cos(angles[idx])/resolution - 0.5).astype(int)
+        y = np.round(center[1] - lidar[idx]*np.sin(angles[idx])/resolution - 0.5).astype(int)
         if x > 0 and x < grid_size[0] and y > 0 and y < grid_size[1]:
             grid[x,y] = 1
 

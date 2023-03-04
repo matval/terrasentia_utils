@@ -157,7 +157,9 @@ class DataExtractor:
         self.right_cv_depth = []
         self.data_elevation_map = []
         self.lidar = []
-        self.imu = []
+        self.imu_orientation = []
+        self.imu_rate = []
+        self.imu_acceleration = []
         self.cmd_vel = []
         self.odom_position = []
         self.odom_orientation = []
@@ -354,6 +356,10 @@ class DataExtractor:
                 self.vio_stamp = np.append(self.vio_stamp, t)
 
             elif topic == imu_topic:
+                qw = msg.orientation.w
+                qx = msg.orientation.x
+                qy = msg.orientation.y
+                qz = msg.orientation.z
                 ax = msg.angular_velocity.x
                 ay = msg.angular_velocity.y
                 az = msg.angular_velocity.z
@@ -361,7 +367,9 @@ class DataExtractor:
                 ly = msg.linear_acceleration.y
                 lz = msg.linear_acceleration.z
                 self.t_imu = np.append(self.t_imu, t)
-                self.imu.append([ax,ay,az,lx,ly,lz])
+                self.imu_orientation.append([qw, qx, qy, qz])
+                self.imu_rate.append([ax,ay,az])
+                self.imu_acceleration.append([lx,ly,lz])
 
             elif topic == motion_cmd_topic:
                 vx = msg.linear.x
@@ -398,17 +406,25 @@ class DataExtractor:
                     self.left_t_depth = np.append(self.left_t_depth, t)
             
             # Center image
-            if (topic==center_image_topic or topic==center_image_compressed_topic or topic==center_depth_topic) and abs(center_t_img-center_t_depth) < 0.02:
-                if len(self.center_t_img) == 0:
-                    self.center_cv_img.append(center_cv_img)
-                    self.center_cv_depth.append(center_cv_depth)
-                    self.center_t_img = np.append(self.center_t_img, t)
-                    self.center_t_depth = np.append(self.center_t_depth, t)
-                elif (center_t_img-self.center_t_img[0])/len(self.center_t_img) >= (1.0/args.get_freq):
-                    self.center_cv_img.append(center_cv_img)
-                    self.center_cv_depth.append(center_cv_depth)
-                    self.center_t_img = np.append(self.center_t_img, t)
-                    self.center_t_depth = np.append(self.center_t_depth, t)
+            if (topic==center_image_topic or topic==center_image_compressed_topic or topic==center_depth_topic):
+                if (center_depth_topic is not None) and abs(center_t_img-center_t_depth) < 0.02:
+                    if len(self.center_t_img) == 0:
+                        self.center_cv_img.append(center_cv_img)
+                        self.center_cv_depth.append(center_cv_depth)
+                        self.center_t_img = np.append(self.center_t_img, t)
+                        self.center_t_depth = np.append(self.center_t_depth, t)
+                    elif (center_t_img-self.center_t_img[0])/len(self.center_t_img) >= (1.0/args.get_freq):
+                        self.center_cv_img.append(center_cv_img)
+                        self.center_cv_depth.append(center_cv_depth)
+                        self.center_t_img = np.append(self.center_t_img, t)
+                        self.center_t_depth = np.append(self.center_t_depth, t)
+                else:
+                    if len(self.center_t_img) == 0:
+                        self.center_cv_img.append(center_cv_img)
+                        self.center_t_img = np.append(self.center_t_img, t)
+                    elif (center_t_img-self.center_t_img[0])/len(self.center_t_img) >= (1.0/args.get_freq):
+                        self.center_cv_img.append(center_cv_img)
+                        self.center_t_img = np.append(self.center_t_img, t)
 
             # Right image
             if (topic==right_image_topic or topic==right_image_compressed_topic or topic==right_depth_topic) and abs(right_t_img-right_t_depth) < 0.02:
@@ -434,7 +450,6 @@ class DataExtractor:
         bag.close()
 
     def get_dict(self):
-
         bag_dict = {'bag_name': self.bag_name,
                     'cmd_vel': {'stamp': self.t_cmd_vel, 'data': self.cmd_vel},
                     'odom': {'stamp': self.odom_stamp,
@@ -447,6 +462,10 @@ class DataExtractor:
                     'gps': {'stamp': self.gps_stamp,
                             'lat_lon': self.gps_lat_lon,
                             'accuracy':self.gps_accuracy},
+                    'imu': {'stamp': self.t_imu,
+                            'orientation': self.imu_orientation,
+                            'angular_velocity': self.imu_rate,
+                            'linear_acceleration': self.imu_acceleration},
                     'traversability': {'stamp': self.t_traversability,
                                        'data': self.traversability},
                     'collision': {'stamp': self.t_collision,
@@ -463,20 +482,24 @@ class DataExtractor:
         return bag_dict
 
     def get_images(self):
-
-        images_dict = {'left': {'rgb': {'stamp': self.left_t_img, 'data': self.left_cv_img},
-                                'depth': {'stamp': self.left_t_depth, 'data': self.left_cv_depth}},
-                       'center': {'rgb': {'stamp': self.center_t_img, 'data': self.center_cv_img},
-                                  'depth': {'stamp': self.center_t_depth, 'data': self.center_cv_depth},
-                                  'intrinsics': self.center_intrinsics,
-                                  'resolution': self.center_resolution},
-                       'right': {'rgb': {'stamp': self.right_t_img, 'data': self.right_cv_img},
-                                 'depth': {'stamp': self.right_t_depth, 'data': self.right_cv_depth}}}
+        images_dict = {
+            'left': {
+                'rgb': {'stamp': self.left_t_img, 'data': self.left_cv_img},
+                'depth': {'stamp': self.left_t_depth, 'data': self.left_cv_depth}},
+            'center': {
+                'rgb': {'stamp': self.center_t_img, 'data': self.center_cv_img},
+                'depth': {'stamp': self.center_t_depth, 'data': self.center_cv_depth},
+                'intrinsics': self.center_intrinsics,
+                'resolution': self.center_resolution},
+            'right': {
+                'rgb': {'stamp': self.right_t_img, 'data': self.right_cv_img},
+                'depth': {'stamp': self.right_t_depth, 'data': self.right_cv_depth}}}
                         
         return images_dict
 
     def get_maps(self):
-
-        maps_dict = {'elevation_map': {'stamp': self.t_elevation_map, 'data': self.data_elevation_map}}
+        maps_dict = {
+            'elevation_map': {'stamp': self.t_elevation_map, 'data': self.data_elevation_map},
+            'lidar': {'stamp': self.t_lidar, 'data': self.lidar}}
 
         return maps_dict
