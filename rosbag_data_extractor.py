@@ -406,25 +406,26 @@ class DataExtractor:
                     self.left_t_depth = np.append(self.left_t_depth, t)
             
             # Center image
-            if (topic==center_image_topic or topic==center_image_compressed_topic or topic==center_depth_topic):
-                if (center_depth_topic is not None) and abs(center_t_img-center_t_depth) < 0.02:
-                    if len(self.center_t_img) == 0:
-                        self.center_cv_img.append(center_cv_img)
-                        self.center_cv_depth.append(center_cv_depth)
-                        self.center_t_img = np.append(self.center_t_img, t)
-                        self.center_t_depth = np.append(self.center_t_depth, t)
-                    elif (center_t_img-self.center_t_img[0])/len(self.center_t_img) >= (1.0/args.get_freq):
-                        self.center_cv_img.append(center_cv_img)
-                        self.center_cv_depth.append(center_cv_depth)
-                        self.center_t_img = np.append(self.center_t_img, t)
-                        self.center_t_depth = np.append(self.center_t_depth, t)
+            if topic==center_image_topic or topic==center_image_compressed_topic or topic==center_depth_topic:
+                if center_depth_topic is not None:
+                    if abs(center_t_img-center_t_depth) < 0.02:
+                        if len(self.center_t_img) == 0:
+                            self.center_cv_img.append(center_cv_img)
+                            self.center_cv_depth.append(center_cv_depth)
+                            self.center_t_img = np.append(self.center_t_img, t)
+                            self.center_t_depth = np.append(self.center_t_depth, t)
+                        elif (center_t_img-self.center_t_img[0])/len(self.center_t_img) >= (1.0/args.get_freq):
+                            self.center_cv_img.append(center_cv_img)
+                            self.center_cv_depth.append(center_cv_depth)
+                            self.center_t_img = np.append(self.center_t_img, t)
+                            self.center_t_depth = np.append(self.center_t_depth, t)
                 else:
                     if len(self.center_t_img) == 0:
                         self.center_cv_img.append(center_cv_img)
                         self.center_t_img = np.append(self.center_t_img, t)
                     elif (center_t_img-self.center_t_img[0])/len(self.center_t_img) >= (1.0/args.get_freq):
-                        self.center_cv_img.append(center_cv_img)
-                        self.center_t_img = np.append(self.center_t_img, t)
+                            self.center_cv_img.append(center_cv_img)
+                            self.center_t_img = np.append(self.center_t_img, t)
 
             # Right image
             if (topic==right_image_topic or topic==right_image_compressed_topic or topic==right_depth_topic) and abs(right_t_img-right_t_depth) < 0.02:
