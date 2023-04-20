@@ -264,7 +264,8 @@ class DataExtractor:
                 
             elif topic == center_depth_topic:
                 if msg.encoding == "16UC1":
-                    np_arr = np.frombuffer(msg.data, np.uint16)
+                    np_arr = np.frombuffer(msg.data, np.uint16) * 10**-3
+                    np_arr[np_arr==0] = np.inf
                 else:
                     np_arr = np.frombuffer(msg.data, np.float32)
                 center_cv_depth = np_arr.reshape(msg.height, msg.width)
