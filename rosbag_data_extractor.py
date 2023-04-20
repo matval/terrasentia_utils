@@ -263,7 +263,10 @@ class DataExtractor:
                 center_t_img = t
                 
             elif topic == center_depth_topic:
-                np_arr = np.frombuffer(msg.data, np.float32)
+                if msg.encoding == "16UC1":
+                    np_arr = np.frombuffer(msg.data, np.uint16)
+                else:
+                    np_arr = np.frombuffer(msg.data, np.float32)
                 center_cv_depth = np_arr.reshape(msg.height, msg.width)
                 if hasattr(args, 'image_size'):
                     center_cv_depth = cv2.resize(center_cv_depth, args.image_size, interpolation = cv2.INTER_NEAREST)
