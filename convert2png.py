@@ -1,8 +1,8 @@
 import os
 from PIL import Image
 
-input_path = r"/home/mateus/catkin_ws/src/traversability_research/dataset/supervised/data_train/ts_2022_07_14_16h50m41s/image (copy)"
-output_path = r"/home/mateus/catkin_ws/src/traversability_research/dataset/supervised/data_train/ts_2022_07_14_16h50m41s/image"
+input_path = r"/home/mateus/catkin_ws/src/traversability_research/dataset/supervised/data_train/ts_2022_07_14_16h50m41s/image"
+output_path = r"/home/mateus/catkin_ws/src/traversability_research/dataset/supervised/data_train/ts_2022_07_14_16h50m41s/image_png"
 
 for root, dirs, files in os.walk(input_path, topdown=False):
     for name in files:
