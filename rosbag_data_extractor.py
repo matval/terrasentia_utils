@@ -200,7 +200,6 @@ class DataExtractor:
             left_image_compressed_topic,
             left_depth_topic,
             center_image_topic,
-            center_image_compressed_topic,
             center_depth_topic,
             center_image_compressed_topic,
             center_cam_info,
@@ -229,13 +228,13 @@ class DataExtractor:
             t = t.to_sec()
             
             # Left image
-            if topic == left_image_topic: # and (count % int(30/args.get_freq)) < 0.001:
+            if topic == left_image_topic:
                 cv_img = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
                 left_cv_img = cv2.resize(cv_img, args.image_size, interpolation = cv2.INTER_CUBIC)
                 left_cv_img = cv2.rotate(left_cv_img, cv2.ROTATE_180)
                 left_t_img = t
                 
-            elif topic == left_image_compressed_topic: # and (count % int(30/args.get_freq)) < 0.001:
+            elif topic == left_image_compressed_topic:
                 cv_img = bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
                 left_cv_img = cv2.resize(cv_img, args.image_size, interpolation = cv2.INTER_CUBIC)
                 left_cv_img = cv2.rotate(left_cv_img, cv2.ROTATE_180)
